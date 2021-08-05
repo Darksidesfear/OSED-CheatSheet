@@ -2,16 +2,16 @@
 
 ### Table of Contents
 
-* 1. [Crash the application.](#Crash)
-* 2. [Control the EIP.](#EIP)
-* 3. [Locate Space for our shellcode.](#LocateShellcode)
-* 4. [Calculate Space for our shellcode.](#SpaceShellcode)
-* 5. [Checking for bad characters.](#BadChars)
-* 6. [Finding Returning address.](#JMP)
-* 7. [Controling the Execution Flow.](#ControlExecutionFlow)
-* 8. [Get a Shell!](#Shell)
-* 9. [No Shell?](#NoShell)
-* 10. [Sometimes...](#Sometimes)
+* 1.0 [Crash the application.](#Crash)
+* 2.0 [Control the EIP.](#EIP)
+* 3.0 [Locate Space for our shellcode.](#LocateShellcode)
+* 4.0 [Calculate Space for our shellcode.](#SpaceShellcode)
+* 5.0 [Checking for bad characters.](#BadChars)
+* 6.0 [Finding Returning address.](#JMP)
+* 7.0 [Controling the Execution Flow.](#ControlExecutionFlow)
+* 8.0 [Get a Shell!](#Shell)
+* 9.0 [No Shell?](#NoShell)
+* 10.0 [Sometimes...](#Sometimes)
   * 10.1 [Not enough space to test bad characters.](#NotEnoughSpace-BadChars) 
   * 10.2 [Not enough space for the shellcode.](#NotEnoughSpace-Shellcode)
 
