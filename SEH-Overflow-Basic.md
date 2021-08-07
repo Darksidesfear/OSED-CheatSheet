@@ -13,7 +13,7 @@
 10. [Reach our shellcode.](#ReachShellcode)
 11. [Get a Shell!](#Shell)
 
-### Crash the application.<a href="crash"></a>
+### Crash the application.<a name="crash"></a>
 
 ```python
 ...
@@ -23,7 +23,7 @@ inputBuffer = b"A" * size
 ...
 ```
 
-### Analyse the crash.<a href="analyse"></a>
+### Analyse the crash.<a name="analyse"></a>
 
 Insepcting at the time of the crash, i can see that thise time EIP isn't overwritten, but EAX register is. 
 
@@ -82,7 +82,7 @@ cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00010246
 
 This time we can see that we gain the control of the EIP, this happen because of SEH (<a href="https://en.wikipedia.org/wiki/Microsoft-specific_exception_handling_mechanisms">Structured Exception Handler</a>).
 
-### Inspecting the exception handler chain.<a href="exchain"></a>
+### Inspecting the exception handler chain.<a name="exchain"></a>
 
 Using the command "!exchain", we are able to inspect the exception handler chain at the moment of the crash.
 
@@ -104,7 +104,7 @@ libpal!SCA_ConfigObj::Deserialize+0x1d:
 
 By doing so, we are able to see if we can overwrite the exact offset of exception handler.
 
-### Gaining Control of Exception Handler.<a href="GCEH"></a>
+### Gaining Control of Exception Handler.<a name="GCEH"></a>
 
 As we do not control the stack in our scenario, we can't redirect the execution flow to it using an instruction like "JMP ESP" as we do in a vanilla stack overflow.
 
@@ -199,7 +199,7 @@ cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00010246
 
 As we can confirm, we successfully overwritted the exception handler with our four B. Continue the execution show that the EIP is overwritten with our four B as expected.
 
-### Detecting Bad Characters.<a href="BadChars"></a>
+### Detecting Bad Characters.<a name="BadChars"></a>
 
 ```python
 ...
@@ -271,7 +271,7 @@ We can see that we locate our hexadecimal characters, and find that after the ch
 
 Now that our characters are located, repeat the step above until found all bad characters.
 
-### Finding a P/P/R Instructions.<a href="PPR"></a>
+### Finding a P/P/R Instructions.<a name="PPR"></a>
 
 First, we need to find a module without protection that didnt containt any bad characters.
 
@@ -358,7 +358,7 @@ libspp!pcre_exec+0x16460:
 
 The address points to valid sequence of instructions, and doesn't contain any bad chars.
 
-### Gaining control of Instruction Pointer.<a href="ESP"></a>
+### Gaining control of Instruction Pointer.<a name="ESP"></a>
 
 Now we can update the PoC and try to overwrite the instruction pointer with the P/P/R instruction.
 
@@ -434,7 +434,7 @@ cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
 
 We can see that after executing the RET instruction, we returned into the stack within our controlled buffer right before our Exception Handler address.
 
-### Short Jump.<a href="ShortJump"></a>
+### Short Jump.<a name="ShortJump"></a>
 
 Now, inspect the resulting assembly instructions inside WinDbg.
 
@@ -533,7 +533,7 @@ cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
 
 As we can see, if we execute the short jump, we will indeed land in our buffer right after the SEH.
 
-### Locate the Shellcode.<a href="LocateShellcode"></a>
+### Locate the Shellcode.<a name="LocateShellcode"></a>
 
 Now inspecting the memory pointed to by the instruction pointer, we see that we are very close to reaching the beginning of our stack.
 
@@ -685,7 +685,7 @@ Verify that our DWORDs buffer isn't truncated.
 007bfdf4  fffffffe
 ```
 
-### Reach our Shellcode.<a href="ReachShellcode"></a>
+### Reach our Shellcode.<a name="ReachShellcode"></a>
 
 Now we need to find the offset from our current stack pointer to the beggining of our shellcode.
 
@@ -826,7 +826,7 @@ eip=01cafc74 esp=01cafc74 ebp=01caf458 iopl=0 nv up ei ng nz na pe nc
 cs=001b ss=0023 ds=0023 es=0023 fs=003b gs=0000 efl=00000286  01cafc74 90 nop
 ```
 
-### Get a Shell!<a href="Shell"></a>
+### Get a Shell!<a name="Shell"></a>
 
 Generate the shellcode and update the PoC.
 
