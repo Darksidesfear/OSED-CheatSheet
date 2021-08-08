@@ -5,6 +5,7 @@ Exploit Development Cheat Sheet. Created during my EXP-301 Course.
 
 * Tools Usage
   * <a href="https://github.com/V0lk3n/OSED-CheatSheet/blob/main/Cheat_Sheet-WinDbg_Commands.md">Cheat Sheet - WinDbg Commands</a>
+  * <a href="https://github.com/V0lk3n/OSED-CheatSheet/blob/main/Cheat_Sheet-IDA_Pro.md">Cheat Sheet - IDA Pro</a>
 
 * Overflow
   * 0.0 <a href="https://v0lk3n.github.io/writeup/training/Buffer_Overflow-Exploiting_SLMail_5_5">Stak Overflow - Basic (Immunity Debugger)</a>
