@@ -4,14 +4,15 @@
 
 * 1.0 [Not enough space to test bad characters.](#NES-BC)
 * 2.0 [Not enough spcae to test shellcode.](#NES-Shellcode)
-#### 10.1 Not enough space to test bad characters.<a name="NES-BC"></a>
+
+### 1. Not enough space to test bad characters.<a name="NES-BC"></a>
 
 Sometime, if you didn't have enough size to test all the bad characters in one shot.
  
 To overcome this, you can comment all the badchars line, and send the maximum badchars size possible at a time.
 
 
-#### 10.2 Not enough space for the shellcode.<a name="NES-Shellcode"></a>
+### 2. Not enough space for the shellcode.<a name="NES-Shellcode"></a>
 
 If you cant find enought space for the shellcode, once you get the JMP ESP instruction, check if any others registers redirect to our buffer (it can be the "A" buffer too).
  
