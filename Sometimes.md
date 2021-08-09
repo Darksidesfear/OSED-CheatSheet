@@ -3,7 +3,7 @@
 ## Table of Contents
 
 * 1.0 [Not enough space to test bad characters.](#NES-BC)
-* 2.0 [Not enough spcae to test shellcode.](#NES-Shellcode)
+* 2.0 [Not enough space for the shellcode.](#NES-Shellcode)
 * 3.0 [Testing Bad Characters doesn't cause a crash.](#NoCrashBC)
 * 4.0 [Unique String Cause Another Crash.](#UniqueStringAnotherCrash)
 * 5.0 [Partial EIP Overwrite.](#PartialEIPOverwrite)
@@ -19,7 +19,7 @@ To overcome this, you can comment all the badchars line, and send the maximum ba
 
 ### 2. Not enough space for the shellcode.<a name="NES-Shellcode"></a>
 
-If you cant find enought space for the shellcode, once you get the JMP ESP instruction, check if any others registers redirect to our buffer (it can be the "A" buffer too).
+If you cant find enought space for the shellcode, once you get the JMP ESP instruction, try to place a shellcode in another buffer (it can be the "A" buffer too) then check if any others registers redirect to our buffer.
  
 Then if you find it (example ECX), find the JMP ECX opcodes.
  
