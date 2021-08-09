@@ -60,6 +60,11 @@ low 12.0784 high 0
 Double: 5.40901e-315
 ```
 
+Display information about specifiy memory address :
+```bash
+0:005> !address 01243c2e  
+```
+
 ### 2. Reading from Memory.<a name="Reading"></a>
 
 We can read process memory content using the display command followed by the size indicator.
